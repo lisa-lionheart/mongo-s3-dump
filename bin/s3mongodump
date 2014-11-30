@@ -1,0 +1,61 @@
+#!/usr/bin/env node
+
+var MongoClient = require('mongodb').MongoClient,
+    async = require('async'),
+    CollectionWriter = require('../src/CollectionWriter');
+
+var args = require('yargs')
+    .usage('Dump a mongo database to S3 bucket\n'+
+           'Usage: $0 [mongo] [bucket] --path path')
+    .describe('mongo', 'Connect string for mongo')
+    .describe('bucket', 'Bucket to store data in')
+    .describe('path', 'Path within bucket')
+    .demand(2)
+    .argv;
+
+var mongo = args._[0];
+var bucket = args._[1];
+var path = '';
+
+console.log('DB is: '+mongo);
+console.log('Bucket is:'+ bucket);
+console.log('Path is:'+path);
+
+
+MongoClient.connect(mongo, function(err, db){
+
+    if(err) {
+        console.log('Error connecting to mongo');
+        process.exit(1);
+    }
+
+    db.collections(function(err, collections){
+        if(err) {
+            console.log('Error getting collections');
+            process.exit(1);
+        }
+
+        async.eachSeries(collections, function(collection, next){
+
+
+            console.log('Saving collection ' + collection.collectionName + '...');
+
+            var writer = new CollectionWriter(collection);
+            writer.setDestination(bucket, path + collection.collectionName);
+            writer.execute({}, next);
+
+            writer.on('progress', function(bytesSent, bytesRecived){
+               console.log('Bytes saved: ' + bytesRecived);
+            });
+
+        }, function(err) {
+            if (err) {
+                console.log('Error', err);
+                process.exit(1);
+            }
+            process.exit(0);
+        });
+    });
+
+
+});
